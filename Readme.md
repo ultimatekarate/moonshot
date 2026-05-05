@@ -1,6 +1,6 @@
 # Moonshot
 
-Pushing as much of a Bayesian inference pipeline into the Rust compiler as possible, then deploying to a 32KB-class microcontroller. Exploratory research — the goal is to find out what's possible, where the friction is, and whether the pipeline composes. It seems like it should work.
+Pushing as much of a Bayesian inference pipeline into the Rust compiler as possible, then deploying to a 32KB-class microcontroller. Exploratory research — the goal is to find out what's possible, where the friction is, and whether the pipeline composes. ~~It seems like it should work.~~ It actually works.
 
 ## Research question
 
@@ -71,5 +71,3 @@ just lab4      # macro emits straight-line specialized update
 just qemu      # boot the embedded binary in QEMU
 just verify    # all of the above + dep-tree check + 3-way equivalence
 ```
-
-The repo is currently scaffolded — every crate compiles structurally with `todo!()` bodies and pointers back to the relevant lab. See [`docs/plan.md`](docs/plan.md) for the per-lab specs, integration glue, open risks, and verification plan.
