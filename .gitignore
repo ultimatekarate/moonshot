@@ -1,3 +1,8 @@
+# Not trying to hide it, I just don't want the noise in the repo
+.claude
+Claude.md
+
+.cargo/
 /target
 **/*.rs.bk
 Cargo.lock.bak
