@@ -9,27 +9,32 @@
 //
 // Sibling specs live in gamma-poisson.ron and ekf-bearing.ron alongside
 // this file (both are stubs until those labs are fleshed out).
-Kalman(KalmanSpec(
-    f: [
-        [1.0, 0.0, 0.1, 0.0],
-        [0.0, 1.0, 0.0, 0.1],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ],
-    h: [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-    ],
-    q: [
-        [0.01, 0.0,  0.0,  0.0 ],
-        [0.0,  0.01, 0.0,  0.0 ],
-        [0.0,  0.0,  0.01, 0.0 ],
-        [0.0,  0.0,  0.0,  0.01],
-    ],
-    r: [
-        [0.1, 0.0],
-        [0.0, 0.1],
-    ],
+// Note: parens, not brackets — serde represents fixed-size arrays as tuples,
+// and RON's tuple syntax is `(...)`. Brackets would be Vec.
+//
+// Enum variant syntax: `Kalman(<payload>)` — the payload is a KalmanSpec
+// struct, which RON writes as `(field: ..., ...)` with no struct name needed.
+Kalman((
+    f: (
+        (1.0, 0.0, 0.1, 0.0),
+        (0.0, 1.0, 0.0, 0.1),
+        (0.0, 0.0, 1.0, 0.0),
+        (0.0, 0.0, 0.0, 1.0),
+    ),
+    h: (
+        (1.0, 0.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0, 0.0),
+    ),
+    q: (
+        (0.01, 0.0,  0.0,  0.0 ),
+        (0.0,  0.01, 0.0,  0.0 ),
+        (0.0,  0.0,  0.01, 0.0 ),
+        (0.0,  0.0,  0.0,  0.01),
+    ),
+    r: (
+        (0.1, 0.0),
+        (0.0, 0.1),
+    ),
     // Constant by design: dt enters F, F enters K_inf, and K_inf is baked
     // into the binary at build time. On embedded silicon the sample rate is
     // hardware-clocked anyway, so this isn't a compromise. We're eating free
@@ -38,6 +43,7 @@ Kalman(KalmanSpec(
     // No-op defaults: the toy model is already small-scale, so no
     // similarity preconditioning and a unit Cayley reference work fine.
     // Tune these once we measure the actual conditioning of `P`.
-    state_scale: [1.0, 1.0, 1.0, 1.0],
+    state_scale: (1.0, 1.0, 1.0, 1.0),
     cayley_alpha: 1.0,
 ))
+

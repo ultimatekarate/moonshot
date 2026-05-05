@@ -13,3 +13,7 @@ spec = { path = "../spec" }
 spec = { path = "../spec" }
 spec-loader = { path = "../spec-loader" }
 nalgebra = { workspace = true, default-features = false, features = ["std"] }
+
+[dev-dependencies]
+kalman = { path = "../kalman" }
+nalgebra = { workspace = true, default-features = false, features = ["libm", "std"] }

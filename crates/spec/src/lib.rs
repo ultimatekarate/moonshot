@@ -34,7 +34,8 @@ pub enum ModelSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KalmanSpec {
     pub f: [[f32; 4]; 4],
-    pub h: [[f32; 2]; 4],
+    /// Observation matrix, 2 rows × 4 cols (row-major: outer = rows).
+    pub h: [[f32; 4]; 2],
     pub q: [[f32; 4]; 4],
     pub r: [[f32; 2]; 2],
     pub dt: Timestep,
