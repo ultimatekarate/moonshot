@@ -1,0 +1,9 @@
+[package]
+name = "codegen-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Consumer of the kalman_filter! proc-macro (proc-macros need a separate crate)."
+
+[dependencies]
+codegen = { path = "../codegen" }

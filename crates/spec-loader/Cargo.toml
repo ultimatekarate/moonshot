@@ -1,0 +1,11 @@
+[package]
+name = "spec-loader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "File-IO bridge: model.ron → spec::ModelSpec. Used by build.rs and proc-macros."
+
+[dependencies]
+spec = { path = "../spec" }
+ron = { workspace = true }
+serde = { workspace = true, features = ["derive", "std"] }

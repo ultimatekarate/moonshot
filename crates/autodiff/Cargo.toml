@@ -1,0 +1,12 @@
+[package]
+name = "autodiff"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Forward-mode AD via num-dual. Same model::nll source, gradients fall out of the type."
+
+[dependencies]
+spec = { path = "../spec" }
+model = { path = "../model" }
+nalgebra = { workspace = true }
+num-dual = { workspace = true }

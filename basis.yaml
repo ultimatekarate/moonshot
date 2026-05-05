@@ -1,0 +1,204 @@
+governance:
+  version: "1.0"
+  model: linguistic
+
+# ── Moonshot architecture ──────────────────────────────────────────
+# The whole point of this project is compile-time correctness.
+# Layer drift between strict-purity no_std crates, build-time IO,
+# proc-macro-time IO, and embedded entry points is the failure mode
+# that quietly destroys the experiment. Basis makes the layering
+# enforceable.
+#
+# Functional core:
+#   spec      — Inert nouns. ModelSpec, newtypes, completeness enums.
+#   kernel    — Pure math. Reference Kalman, codegen-demo, partial-eval runtime.
+#   autodiff  — Forward-mode AD via dual numbers over the kernel.
+#
+# Imperative shell:
+#   codegen   — Tooling that reads the spec at build/macro time.
+#   shell     — Embedded entry point, host harness, xtask runner.
+
+layers:
+  # ── External layers (third-party packages grouped by concern) ────
+  serialization:
+    external: true
+    role: "Serde + RON for spec parsing"
+    packages: [serde, serde_derive, ron]
+
+  linalg:
+    external: true
+    role: "Numerical math (matrices, dual numbers)"
+    packages: [nalgebra, num-dual, num-traits, simba]
+
+  proc-macro-utils:
+    external: true
+    role: "Procedural macro infrastructure"
+    packages: [syn, quote, proc-macro2]
+
+  embassy:
+    external: true
+    role: "Embedded async runtime + cortex-m support"
+    packages:
+      - embassy-executor
+      - embassy-time
+      - cortex-m
+      - cortex-m-rt
+      - cortex-m-semihosting
+      - panic-semihosting
+      - panic-halt
+
+  cli:
+    external: true
+    role: "CLI argument parsing"
+    packages: [clap]
+
+  rust-internal:
+    external: true
+    role: "Rust language-internal imports"
+    packages: [crate, super, self, std, core, alloc]
+
+  all-external:
+    external: true
+    role: "Unrestricted external access (shell layer escape)"
+    packages: ["*"]
+
+  # ── Internal layers ─────────────────────────────────────────────
+  spec:
+    role: "Inert nouns. ModelSpec, newtypes, completeness enums."
+    packages:
+      - "crates/spec"
+    rules:
+      purity: strict
+      io: forbidden
+      network: forbidden
+      async: forbidden
+    depends_on: [serialization, rust-internal]
+
+  kernel:
+    role: "Pure math. Reference Kalman, codegen-demo consumer, partial-eval runtime."
+    packages:
+      - "crates/model"
+      - "crates/codegen-demo"
+      - "crates/partial-eval/src"
+    rules:
+      purity: strict
+      io: forbidden
+      network: forbidden
+      async: forbidden
+    depends_on: [spec, linalg, rust-internal]
+
+  autodiff:
+    role: "Forward-mode AD over the kernel via dual numbers."
+    packages:
+      - "crates/autodiff"
+    rules:
+      purity: strict
+      io: forbidden
+      network: forbidden
+      async: forbidden
+    depends_on: [spec, kernel, linalg, rust-internal]
+
+  codegen:
+    role: "Tooling: proc-macros and build.rs that read the spec."
+    packages:
+      - "crates/codegen"
+      - "crates/spec-loader"
+      - "crates/partial-eval/build.rs"
+    rules:
+      purity: relaxed
+      io: allowed
+    depends_on: [spec, serialization, proc-macro-utils, linalg, rust-internal]
+
+  shell:
+    role: "Hands. Embedded entry point, host harness, xtask runner."
+    packages:
+      - "crates/embedded"
+      - "crates/end-to-end"
+      - "xtask"
+    rules:
+      purity: relaxed
+      io: allowed
+    depends_on:
+      - spec
+      - kernel
+      - codegen
+      - embassy
+      - cli
+      - rust-internal
+      - all-external
+
+# ── Values Axis ────────────────────────────────────────────────────
+newtypes:
+  enabled: true
+  exclude_params: [index, count, offset]
+  exclude_functions: [len, default, new]
+  types:
+    - name: Timestep
+      wraps: f32
+    - name: LogLikelihood
+      wraps: f32
+    - name: StateDim
+      wraps: usize
+    - name: MeasDim
+      wraps: usize
+    - name: Frobenius
+      wraps: f32
+
+# ── Completeness Axis ──────────────────────────────────────────────
+exhaustive_matching:
+  enabled: true
+  unions:
+    - name: RiccatiResult
+      variants: [Converged, Diverged, MaxIterReached, EscapedFiniteTime]
+    - name: GradientCheck
+      variants: [WithinTolerance, Mismatch]
+    - name: ClosedLoopStability
+      variants: [Stable, Unstable]
+    - name: TestEquivalence
+      variants: [Bitwise, Tolerant, Failed]
+
+# ── Purity Axis ────────────────────────────────────────────────────
+purity:
+  enabled: true
+  forbidden_in_strict:
+    - file_io
+    - network_io
+    - stdout
+    - stderr
+    - env_vars
+    - system_clock
+    - dynamic_execution
+    - subprocess
+
+# ── Placement Axis ─────────────────────────────────────────────────
+boundaries:
+  enabled: true
+  rules:
+    - from: spec
+      to: linalg
+      action: deny
+      reason: "data types must stay zero-deps so they cross-compile everywhere"
+    - from: kernel
+      to: embassy
+      action: deny
+      reason: "pure math must not pull in async runtime"
+    - from: kernel
+      to: proc-macro-utils
+      action: deny
+      reason: "runtime kernel must not depend on macro infrastructure"
+    - from: autodiff
+      to: embassy
+      action: deny
+      reason: "gradient math is host-side only"
+    - from: codegen
+      to: embassy
+      action: deny
+      reason: "proc-macros run on the host"
+
+# ── Granularity Axis ───────────────────────────────────────────────
+# Per-file line budget. Numerical method code can get verbose. 1009 is the
+# the smallest prime number p such that 1000 < p. This is the first constant
+# define for this repo. It's bad luck to choose it arbitrarily.
+granularity:
+  enabled: true
+  max_lines: 1009

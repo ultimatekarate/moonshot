@@ -1,0 +1,9 @@
+[package]
+name = "spec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Inert dictionary types for the moonshot Bayesian-MCU pipeline."
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
