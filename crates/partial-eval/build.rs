@@ -44,10 +44,10 @@ fn main() {
 /// Solve the discrete algebraic Riccati equation for a Kalman spec, recover
 /// `K_inf`, verify closed-loop stability, and emit the literal const.
 fn emit_kalman(spec: &KalmanSpec) -> String {
-    let f = mat4_from_rows(&spec.f);
-    let h = mat2x4_from_rows(&spec.h);
-    let q = mat4_from_rows(&spec.q);
-    let r = mat2_from_rows(&spec.r);
+    let f = mat4_from_rows(&spec.f.0);
+    let h = mat2x4_from_rows(&spec.h.0);
+    let q = mat4_from_rows(&spec.q.0);
+    let r = mat2_from_rows(&spec.r.0);
 
     // State scaling: x' = D⁻¹ x  →  F' = D⁻¹ F D, Q' = D⁻¹ Q D⁻ᵀ, H' = H D
     let d = Mat4::from_diagonal(&nalgebra::Vector4::new(

@@ -19,6 +19,35 @@ pub struct MeasDim(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Frobenius(pub f32);
 
+/// Fixed-shape matrix wrapper. `Matrix<R, C>` and `Matrix<C, R>` are distinct
+/// types — confusing rows and columns becomes a compile error rather than a
+/// silent shape bug at deserialisation time. R is rows, C is cols (same
+/// convention as `nalgebra::SMatrix<T, R, C>` and standard math notation).
+/// Storage is row-major: outer index is the row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Matrix<const R: usize, const C: usize>(pub [[f32; C]; R]);
+
+// serde's derive doesn't propagate const generics into the bounds it needs on
+// the inner `[[f32; C]; R]`. The where-clauses delegate the bound to the
+// concrete instantiation site, where serde's array impls do exist.
+impl<const R: usize, const C: usize> serde::Serialize for Matrix<R, C>
+where
+    [[f32; C]; R]: serde::Serialize,
+{
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
+    }
+}
+
+impl<'de, const R: usize, const C: usize> serde::Deserialize<'de> for Matrix<R, C>
+where
+    [[f32; C]; R]: serde::Deserialize<'de>,
+{
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Matrix(serde::Deserialize::deserialize(d)?))
+    }
+}
+
 /// Sum type over the three toy problems. Forces every consumer
 /// (build.rs, proc-macros, host harness) to dispatch — preventing
 /// architecture from over-fitting to any one problem.
@@ -33,11 +62,10 @@ pub enum ModelSpec {
 /// State `[x, y, vx, vy]`, observation `[x, y]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KalmanSpec {
-    pub f: [[f32; 4]; 4],
-    /// Observation matrix, 2 rows × 4 cols (row-major: outer = rows).
-    pub h: [[f32; 4]; 2],
-    pub q: [[f32; 4]; 4],
-    pub r: [[f32; 2]; 2],
+    pub f: Matrix<4, 4>,
+    pub h: Matrix<2, 4>,
+    pub q: Matrix<4, 4>,
+    pub r: Matrix<2, 2>,
     pub dt: Timestep,
     /// Diagonal preconditioner for the state. Used as a similarity transform
     /// `x' = D⁻¹ x`, `F' = D⁻¹ F D`, etc. so that all state components have
@@ -69,8 +97,8 @@ pub struct GammaPoissonSpec {
 /// at runtime via dual numbers, not embedded as a literal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EkfBearingSpec {
-    pub f: [[f32; 4]; 4],
-    pub q: [[f32; 4]; 4],
+    pub f: Matrix<4, 4>,
+    pub q: Matrix<4, 4>,
     /// Scalar bearing measurement noise (radians²).
     pub r: f32,
     pub dt: Timestep,
