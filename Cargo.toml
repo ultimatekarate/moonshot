@@ -40,4 +40,4 @@ ron = "0.8"
 syn = { version = "2", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"
-num-dual = { version = "0.10", default-features = false, features = ["alloc"] }
+num-dual = { version = "0.10", default-features = false }
