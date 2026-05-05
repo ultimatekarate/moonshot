@@ -2,23 +2,24 @@
 #![no_main]
 
 use cortex_m_rt::entry;
+use cortex_m_semihosting::{debug, hprintln};
 use panic_halt as _;
 
 mod samples;
 
 #[entry]
 fn main() -> ! {
-    // Stub: see docs/plan.md Lab 5.
-    // Real implementation will:
-    //   - spawn an embassy task
-    //   - walk samples::SAMPLES, calling Filter4x2::update
-    //   - hprintln! the state on each tick
-    //   - exit via cortex_m_semihosting::debug::exit on completion
     let mut filter = codegen_demo::Filter4x2::new();
-    for &(z_x, z_y) in samples::SAMPLES.iter() {
+
+    for (k, &(z_x, z_y)) in samples::SAMPLES.iter().enumerate() {
         filter.update(z_x, z_y);
+        hprintln!(
+            "[k={:>3}] x={:>8.3} y={:>8.3} vx={:>6.3} vy={:>6.3}",
+            k, filter.x[0], filter.x[1], filter.x[2], filter.x[3]
+        );
     }
-    loop {
-        cortex_m::asm::wfi();
-    }
+
+    hprintln!("done");
+    debug::exit(debug::EXIT_SUCCESS);
+    loop {}
 }
