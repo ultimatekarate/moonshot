@@ -1,0 +1,11 @@
+[package]
+name = "end-to-end"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host harness: runs reference, macro-expanded, and QEMU-traced filters side by side."
+
+[dependencies]
+spec = { path = "../spec" }
+model = { path = "../model" }
+codegen-demo = { path = "../codegen-demo" }

@@ -1,0 +1,16 @@
+[package]
+name = "codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lab 4: kalman_filter! proc-macro that emits a fully specialized update."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { workspace = true }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
+spec = { path = "../spec" }
+spec-loader = { path = "../spec-loader" }

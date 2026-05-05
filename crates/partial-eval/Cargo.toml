@@ -1,0 +1,15 @@
+[package]
+name = "partial-eval"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lab 3: build.rs solves the discrete algebraic Riccati equation, embeds K_inf as a const."
+build = "build.rs"
+
+[dependencies]
+spec = { path = "../spec" }
+
+[build-dependencies]
+spec = { path = "../spec" }
+spec-loader = { path = "../spec-loader" }
+nalgebra = { workspace = true, default-features = false }

@@ -1,0 +1,37 @@
+// 2D constant-velocity Kalman model.
+// State: [x, y, vx, vy]   Observation: [x_meas, y_meas]   dt = 0.1
+//
+// Single source of truth — read by partial-eval/build.rs and the
+// kalman_filter! proc-macro at compile time.
+ModelSpec(
+    f: [
+        [1.0, 0.0, 0.1, 0.0],
+        [0.0, 1.0, 0.0, 0.1],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ],
+    h: [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+    ],
+    q: [
+        [0.01, 0.0,  0.0,  0.0 ],
+        [0.0,  0.01, 0.0,  0.0 ],
+        [0.0,  0.0,  0.01, 0.0 ],
+        [0.0,  0.0,  0.0,  0.01],
+    ],
+    r: [
+        [0.1, 0.0],
+        [0.0, 0.1],
+    ],
+    // Constant by design: dt enters F, F enters K_inf, and K_inf is baked
+    // into the binary at build time. On embedded silicon the sample rate is
+    // hardware-clocked anyway, so this isn't a compromise. We're eating free
+    // lunch.
+    dt: Timestep(0.1),
+    // No-op defaults: the toy model is already small-scale, so no
+    // similarity preconditioning and a unit Cayley reference work fine.
+    // Tune these once we measure the actual conditioning of `P`.
+    state_scale: [1.0, 1.0, 1.0, 1.0],
+    cayley_alpha: 1.0,
+)
