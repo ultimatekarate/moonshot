@@ -1,0 +1,26 @@
+// EKF for bearing-only 2D tracking. State [x, y, vx, vy] under constant-velocity
+// dynamics; observation is the scalar bearing θ = atan2(y - sy, x - sx) from the
+// sensor at (sx, sy). The observation model's Jacobian is computed at runtime
+// via dual numbers (autodiff lab is genuinely load-bearing here).
+//
+// The geometry is famously degenerate: bearing-only is unobservable from a
+// stationary sensor, so the EKF can fail in instructive ways when the
+// linearization point is chosen badly.
+EkfBearing(EkfBearingSpec(
+    f: [
+        [1.0, 0.0, 0.1, 0.0],
+        [0.0, 1.0, 0.0, 0.1],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ],
+    q: [
+        [0.01, 0.0,  0.0,  0.0 ],
+        [0.0,  0.01, 0.0,  0.0 ],
+        [0.0,  0.0,  0.01, 0.0 ],
+        [0.0,  0.0,  0.0,  0.01],
+    ],
+    r: 0.001,
+    dt: Timestep(0.1),
+    state_scale: [1.0, 1.0, 1.0, 1.0],
+    sensor_position: [0.0, 0.0],
+))

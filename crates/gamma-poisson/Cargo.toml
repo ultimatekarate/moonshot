@@ -1,0 +1,9 @@
+[package]
+name = "gamma-poisson"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lab 1b: Gamma-Poisson conjugate update — discrete-observation, no-matrix Bayesian inference."
+
+[dependencies]
+spec = { path = "../spec" }

@@ -1,0 +1,10 @@
+[package]
+name = "ekf-bearing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lab 1c: EKF for bearing-only tracking — non-linear h, AD-computed Jacobian."
+
+[dependencies]
+spec = { path = "../spec" }
+nalgebra = { workspace = true }

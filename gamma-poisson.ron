@@ -1,0 +1,12 @@
+// Gamma-Poisson conjugate update for on-device event-rate estimation.
+// Posterior: Gamma(α, β) over the Poisson rate λ.
+// Update on observing k events in one tick: (α, β) → (α + k, β + 1).
+//
+// Used here as a stress test on the architecture: no nalgebra, no AD,
+// no Riccati. If the pipeline still works for this, the parts that
+// "still work" are genuinely architecture rather than Kalman scaffolding.
+GammaPoisson(GammaPoissonSpec(
+    prior_shape: 1.0,
+    prior_rate: 1.0,
+    tick_interval: Timestep(0.1),
+))

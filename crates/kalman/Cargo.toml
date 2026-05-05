@@ -1,0 +1,10 @@
+[package]
+name = "kalman"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lab 1a: reference Kalman filter, generic over scalar T (works for f32 and Dual<f32>)."
+
+[dependencies]
+nalgebra = { workspace = true }
+spec = { path = "../spec" }
