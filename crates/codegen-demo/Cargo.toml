@@ -7,3 +7,7 @@ description = "Consumer of the kalman_filter! proc-macro (proc-macros need a sep
 
 [dependencies]
 codegen = { path = "../codegen" }
+
+[dev-dependencies]
+kalman = { path = "../kalman" }
+nalgebra = { workspace = true, default-features = false, features = ["libm", "std"] }
