@@ -9,13 +9,17 @@ governance:
 # that quietly destroys the experiment. Basis makes the layering
 # enforceable.
 #
+# Three model classes share the architecture (Kalman, Gamma-Poisson,
+# EKF-bearing). Architectural choices that only fit one are quarantined;
+# choices that hold across all three are the real commitments.
+#
 # Functional core:
-#   spec      — Inert nouns. ModelSpec, newtypes, completeness enums.
-#   kernel    — Pure math. Reference Kalman, codegen-demo, partial-eval runtime.
-#   autodiff  — Forward-mode AD via dual numbers over the kernel.
+#   spec      — Inert nouns. Sum-typed ModelSpec, newtypes, completeness enums.
+#   kernel    — Pure math. Three model labs, codegen-demo, partial-eval runtime.
+#   autodiff  — Forward-mode AD via dual numbers (load-bearing for EKF Jacobian).
 #
 # Imperative shell:
-#   codegen   — Tooling that reads the spec at build/macro time.
+#   codegen   — Tooling that reads the spec at build/macro time, dispatches per model.
 #   shell     — Embedded entry point, host harness, xtask runner.
 
 layers:
@@ -75,9 +79,11 @@ layers:
     depends_on: [serialization, rust-internal]
 
   kernel:
-    role: "Pure math. Reference Kalman, codegen-demo consumer, partial-eval runtime."
+    role: "Pure math. The three model labs, codegen-demo consumer, partial-eval runtime."
     packages:
-      - "crates/model"
+      - "crates/kalman"
+      - "crates/gamma-poisson"
+      - "crates/ekf-bearing"
       - "crates/codegen-demo"
       - "crates/partial-eval/src"
     rules:
@@ -155,7 +161,7 @@ exhaustive_matching:
     - name: ClosedLoopStability
       variants: [Stable, Unstable]
     - name: TestEquivalence
-      variants: [Bitwise, Tolerant, Failed]
+      variants: [Tolerant, Failed]
 
 # ── Purity Axis ────────────────────────────────────────────────────
 purity:

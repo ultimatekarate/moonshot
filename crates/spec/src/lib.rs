@@ -19,8 +19,20 @@ pub struct MeasDim(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Frobenius(pub f32);
 
+/// Sum type over the three toy problems. Forces every consumer
+/// (build.rs, proc-macros, host harness) to dispatch — preventing
+/// architecture from over-fitting to any one problem.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ModelSpec {
+pub enum ModelSpec {
+    Kalman(KalmanSpec),
+    GammaPoisson(GammaPoissonSpec),
+    EkfBearing(EkfBearingSpec),
+}
+
+/// 2D constant-velocity Kalman: linear-Gaussian filtering for sensor fusion.
+/// State `[x, y, vx, vy]`, observation `[x, y]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KalmanSpec {
     pub f: [[f32; 4]; 4],
     pub h: [[f32; 2]; 4],
     pub q: [[f32; 4]; 4],
@@ -35,6 +47,36 @@ pub struct ModelSpec {
     /// conditioning when α sits near the geometric middle of `P`'s spectrum.
     /// If `state_scale` has done its job, `α = 1.0` is usually fine.
     pub cayley_alpha: f32,
+}
+
+/// Gamma-Poisson conjugate update: on-device event-rate estimation.
+/// Posterior over the rate `λ` given a stream of count observations.
+/// `Gamma(α, β) → Gamma(α + Σk_i, β + n)` after `n` ticks of total counts `Σk_i`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GammaPoissonSpec {
+    /// Prior shape `α₀` for the rate.
+    pub prior_shape: f32,
+    /// Prior rate `β₀` for the rate (units: per tick).
+    pub prior_rate: f32,
+    /// Tick interval — the time over which counts are aggregated.
+    pub tick_interval: Timestep,
+}
+
+/// EKF for bearing-only 2D tracking: non-linear observation, AD genuinely
+/// load-bearing for the Jacobian. Same 4D state as the linear Kalman.
+/// Observation is a scalar bearing `θ = atan2(y, x)`; `H` is computed
+/// at runtime via dual numbers, not embedded as a literal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EkfBearingSpec {
+    pub f: [[f32; 4]; 4],
+    pub q: [[f32; 4]; 4],
+    /// Scalar bearing measurement noise (radians²).
+    pub r: f32,
+    pub dt: Timestep,
+    pub state_scale: [f32; 4],
+    /// Sensor position in world frame. Bearing is measured *to* the target
+    /// *from* this point.
+    pub sensor_position: [f32; 2],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -71,7 +113,8 @@ pub enum ClosedLoopStability {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum TestEquivalence {
-    Bitwise,
+    /// Trajectories agree within the per-component tolerance. The `f32`
+    /// reports the worst observed max-abs-diff so we can track drift.
     Tolerant(f32),
     Failed,
 }

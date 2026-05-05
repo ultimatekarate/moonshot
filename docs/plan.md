@@ -10,48 +10,109 @@ Three findings from research that shape the design:
 2. **Enzyme is too fragile for this stack.** It requires a custom-built nightly rustc (`llvm.enzyme = true`) and the official channel only carries it intermittently. With 6 parameters in our toy model, forward-mode AD via `num-dual` is functionally equivalent at trivial cost and keeps the entire workspace on stable Rust. The AD lab uses dual numbers; same source code, parameterised over scalar type.
 3. **The remaining pipeline still requires custom glue.** nalgebra is a runtime library, proc-macros work on tokens, embassy targets bare metal, build.rs reads files. The integration is the research artifact — knit together via a shared `model.ron` + a small `crates/spec` dictionary that everyone consumes.
 
-**Choices anchored from your answers**: 2D Kalman filter (constant velocity, state `[x, y, vx, vy]`, observation `[x, y]`), QEMU first (`lm3s6965evb`, Cortex-M3), five labs as a scaffold with a thin end-to-end seam.
+**Choices anchored from your answers**: three model classes (so the architecture can't over-fit to one), QEMU first (`lm3s6965evb`, Cortex-M3), labs as a scaffold with a thin end-to-end seam.
+
+## Three model classes
+
+The architecture must serve all three; choices that only fit one get quarantined into that one's crate. The trio is picked to maximise architectural pressure:
+
+1. **2D Kalman filter** (`crates/kalman`) — linear-Gaussian sensor fusion. State `[x, y, vx, vy]`, observation `[x, y]`. Closed-form steady-state gain via Riccati. *Real-world stand-in for*: drone IMU/GPS fusion, Li-ion state-of-charge, AHRS, automotive radar/camera fusion. **Exercises**: nalgebra const dims, build-time numerical solver, eigenvalue stability check, Cayley parametrization.
+2. **Gamma-Poisson conjugate update** (`crates/gamma-poisson`) — on-device event-rate estimation. Posterior `Gamma(α + Σk, β + n)` over the Poisson rate after `n` ticks. *Real-world stand-in for*: predictive maintenance, packet-loss tracking, queue monitoring, interrupt-rate anomaly detection. **Exercises**: the architecture *without* nalgebra, AD, or Riccati. If basis governance, the proc-macro story, and the embedded shell still hold for a model that has no matrices, those parts are genuinely architecture.
+3. **EKF for bearing-only 2D tracking** (`crates/ekf-bearing`) — non-linear observation `θ = atan2(y - sy, x - sx)`. *Real-world stand-in for*: passive sonar, anti-drone direction-finding, marine wildlife acoustic tracking, vision-based robot localisation. **Exercises**: AD genuinely load-bearing (Jacobian computed every update via dual numbers, not precomputed), time-varying gain (no Riccati steady state), and a famously degenerate geometry that stresses the build-time machinery.
+
+`ModelSpec` is a sum type over the three; every consumer (build.rs, proc-macros, host harness) dispatches. Adding a fourth model means adding a variant — basis exhaustive-matching forces every consumer to declare its handling, no silent fall-through.
+
+**Pragmatic implementation order**: Kalman first (most existing scaffolding), Gamma-Poisson second (smallest), EKF-bearing last (depends on a working autodiff lab).
 
 ## Runtime invariants proven at build time
 
 The actual deliverable. Every piece of the compile-time pipeline exists to lift one of these properties from "hopefully" to "guaranteed." Faster builds are a fine bonus, but lifting an invariant is what justifies new build-time machinery.
 
-1. **Riccati convergence.** `K_INF` is the converged fixed point of the Cayley-bounded iteration, not a non-converged or escaped iterate. The Cayley parametrization makes finite escape impossible by construction; the boundary-distance check catches the conditioning failure that maps to `P → ∞`. *Lab 3 build.rs.*
-2. **Closed-loop stability.** Eigenvalues of `(I − K_INF H) F` lie strictly inside the unit disk. A converged Riccati can still produce a marginally-stable gain that drives slow runtime divergence even with bounded inputs — this catches it before bake. *Lab 3 build.rs.*
+**Pipeline-wide (apply to all three models):**
+
 3. **Straight-line update.** `update()` has no allocation, no panic, no recursion, and bounded execution time. *Lab 4 proc-macro emission.*
 4. **No nalgebra in the embedded binary.** Macro output is raw arithmetic; `cargo tree -p embedded` check enforces. *Lab 4 + verification.*
-5. **Host ↔ target equivalence.** The same input trace produces matching output (within tolerance) across host f32 and soft-float Cortex-M3. *end-to-end harness.*
+5. **Host ↔ target equivalence.** The same input trace produces matching output within per-component tolerance across host f32 and soft-float Cortex-M3. (Bit-identical equivalence is explicitly *not* in scope.) *end-to-end harness.*
 6. **Architectural layering preserved.** Strict-purity layers don't accidentally pull in IO, async, or wider deps. *basis.yaml + basis-cli check.*
-7. **Compile-time dimension correctness.** Matrix shape mismatches are compile errors, not runtime panics. *nalgebra const generics.*
+7. **Prior validity.** All model priors are well-formed at build time (Q PD, R PD, Gamma shape/rate positive, etc.) — caught in `partial-eval/build.rs` before any solver runs. *applies to all three.*
 
-Decision rule for new build-time work: it lifts one of these to guaranteed.
+**Kalman-family only (Kalman + EKF-bearing):**
+
+1. **Riccati convergence.** `K_INF` is the converged fixed point of the Cayley-bounded iteration, not a non-converged or escaped iterate. The Cayley parametrization makes finite escape impossible by construction; the boundary-distance check catches the conditioning failure that maps to `P → ∞`. *Lab 3 build.rs.* **Kalman only** — the EKF has no steady-state.
+2. **Closed-loop stability.** Eigenvalues of `(I − K_INF H) F` lie strictly inside the unit disk. A converged Riccati can still produce a marginally-stable gain that drives slow runtime divergence even with bounded inputs. *Lab 3 build.rs.* **Kalman only** for the same reason.
+8. **Compile-time dimension correctness.** Matrix shape mismatches are compile errors, not runtime panics. *nalgebra const generics.* **Kalman + EKF only** (Gamma-Poisson has no matrices).
+
+**Gamma-Poisson only:**
+
+9. **Posterior is always a valid Gamma.** `α > 0`, `β > 0` invariant after every update — straightforwardly true because the update increments only, but worth naming.
+
+Decision rule for new build-time work: it lifts one of these to guaranteed. Decision rule for an architectural choice: it serves a pipeline-wide invariant, OR it's quarantined into the model-specific crate where it belongs (Cayley + Riccati live in `crates/kalman` or `crates/partial-eval`'s Kalman branch, *not* in the proc-macro or the spec).
+
+### What lifting buys at runtime
+
+The seven invariants are the *means*; this is the *end*. Each lifted invariant removes one category of runtime check and one category of runtime failure. Cumulatively, the runtime stops being a *defensive program* and becomes a *proof carrier* — code that can run because it had a proof of correctness; the proof itself doesn't ship, only the code that depends on the proof being valid.
+
+| Lifted | Runtime cost removed |
+| --- | --- |
+| Riccati convergence | NaN propagation from a bad initial gain; startup `K.is_finite()` checks |
+| Closed-loop stability | Divergence watchdog (`if ‖x‖ > threshold then reset`); slow-failure recovery |
+| Straight-line update | Allocator; panic handler; try/catch/recover; early-exit branches |
+| No nalgebra in binary | Generic dispatch tables; monomorphization explosion; flash bloat |
+| Architectural layering | Surprise IO in hot paths; async runtime in unexpected places |
+| Dimension correctness | Shape-mismatch panics; runtime dimension checks; vtable dispatch |
+
+**Concrete embedded payoff is order-of-magnitude.** A defensively-coded Kalman in C++ easily eats 20KB+ before any application code (allocator, exceptions, RTTI, vtables, panic infra, assertions, error codes). The proof-carrying version is the actual arithmetic: 1–3KB. On a 32KB MCU the remaining 29KB is yours.
+
+**The marquee gain is timing determinism, not size.** With every defensive branch removed, `update()` takes a constant number of cycles — same for every input, every time. That's the property that lets the filter co-schedule with hard-real-time control loops on the same chip. Without it you can't promise the next IMU sample won't be missed; with it the schedule is mathematics, not hope.
+
+**Bonus: auditability.** A 50-line straight-line f32 kernel can be read end-to-end by a reviewer who can convince themselves it does what it claims. A defensively-coded equivalent is thousands of lines across alloc/panic/dispatch/recover layers — nobody reads it, nobody can.
+
+### Implications: what this enables
+
+The rung above auditability. Removing defensive overhead reclaims memory you can spend on math — and we all love spending memory on math. Methods previously "too expensive at this scale" become tractable. The compile-time machinery doesn't just make existing methods safer; it changes which class of mathematics you can run on a given chip.
+
+| Method | Why it was out | What it gives you |
+| --- | --- | --- |
+| Sliding-window MAP / factor graphs | O(window × state) RAM | Modern robotics standard; far more accurate than EKF on non-linear observations |
+| Iterated EKF | Re-linearize multiple times per update; needs scratch | Eliminates EKF's linearization-point sensitivity |
+| UKF (sigma points) | 2N+1 state copies; ~5× EKF storage | Captures non-linearity without Jacobians; more robust near the conditioning boundary |
+| Particle filters | 100 particles × state ≈ 1.6KB minimum | Handles multimodal posteriors that Kalman cannot represent at all |
+| Square-root information filters | Larger state representation per step | Dramatically better numerical stability — was routinely skipped for memory |
+| Multiple-hypothesis / GMM tracking | N × per-model storage | Opens model-uncertainty tracking |
+| Online Bayesian model selection | K filters in parallel + posterior weights | Currently sci-fi on small MCUs; freed budget makes it tractable |
+
+This lands hardest on the EKF-bearing lab, where standard EKF is fragile in exactly the ways iterated EKF and sliding-window MAP are not. The choice "EKF because it fits" stops being forced.
+
+**Caveats.** Memory isn't the only constraint. UKF trades storage for compute (N+1 propagations per step). Particle filters need RNG infrastructure of their own. Factor graphs need sparse linear solvers. Not a free buffet — but the *option* to choose these methods exists where it didn't before.
 
 ## Repo layout
-
-Empty workspace today (`C:\Users\joevo\git-repo\moonshot\` contains only `.git/`). Will become:
 
 ```
 moonshot/
 ├── Cargo.toml                 # virtual workspace
 ├── rust-toolchain.toml        # pinned stable channel + thumbv7m target
 ├── basis.yaml                 # architectural governance (see Basis section)
-├── model.ron                  # single source of truth for F, H, Q, R, dt
-├── justfile                   # lab1..5, qemu, verify, expand, basis
+├── model.ron                  # Kalman variant of ModelSpec
+├── gamma-poisson.ron          # GammaPoisson variant of ModelSpec
+├── ekf-bearing.ron            # EkfBearing variant of ModelSpec
+├── justfile                   # labs, qemu, verify, expand, basis
 ├── .cargo/config.toml         # qemu runner for thumbv7m
 ├── crates/
-│   ├── spec/                  # dictionary: ModelSpec data types (no_std, no IO)
-│   ├── spec-loader/           # IO bridge: file/path → ModelSpec (used by build.rs + proc-macro)
-│   ├── model/                 # Lab 1: nalgebra const-dim reference (pure, no_std)
-│   ├── autodiff/              # Lab 2: forward-mode AD via num-dual (stable)
-│   ├── partial-eval/          # Lab 3: build.rs Riccati solver → const K_INF
-│   ├── codegen/               # Lab 4: kalman_filter! proc-macro
-│   ├── codegen-demo/          # consumer of the macro (proc-macros need a separate crate)
+│   ├── spec/                  # dictionary: enum ModelSpec + per-variant structs
+│   ├── spec-loader/           # IO bridge: file/path → ModelSpec
+│   ├── kalman/                # Lab 1a: linear-Gaussian filter (was: model)
+│   ├── gamma-poisson/         # Lab 1b: conjugate update — the "no-matrix" test
+│   ├── ekf-bearing/           # Lab 1c: non-linear, AD-load-bearing
+│   ├── autodiff/              # Lab 2: forward-mode AD via num-dual
+│   ├── partial-eval/          # Lab 3: build.rs dispatcher (Riccati for Kalman branch)
+│   ├── codegen/               # Lab 4: bayesian_filter! proc-macro (per-model dispatch)
+│   ├── codegen-demo/          # consumer of the macro
 │   ├── embedded/              # Lab 5: embassy bin, thumbv7m, QEMU target
-│   └── end-to-end/            # host bin: ref vs macro vs QEMU trace
+│   └── end-to-end/            # host harness: reference vs macro vs QEMU trace, per model
 └── xtask/                     # cargo xtask qemu --capture, verify, basis
 ```
 
-Ten crates. Each pulls its weight: proc-macros must live in their own crate, embedded needs `no_std`/`no_main`, the comparison harness needs `std`, and `spec` is split from `spec-loader` so the inert types stay in the strict-purity dictionary layer while the file-reading lives in a relaxed-purity layer (mirrors the convention in the basis self-spec).
+Twelve crates. Two extra over the original sketch are the additional model labs (`gamma-poisson`, `ekf-bearing`); the rest pull their weight as before. Proc-macros must live in their own crate, embedded needs `no_std`/`no_main`, the comparison harness needs `std`, and `spec` is split from `spec-loader` so the inert types stay in the strict-purity dictionary layer while the file-reading lives in a relaxed-purity layer.
 
 ## Toolchain & setup
 
@@ -80,7 +141,7 @@ This project's whole point is *compile-time correctness*. Architectural drift be
 | Layer | Crates / paths | Purity | Depends on (internal) |
 | --- | --- | --- | --- |
 | **spec** (dictionary) | `crates/spec` | strict, IO/network/async forbidden | — |
-| **kernel** (laboratory) | `crates/model`, `crates/codegen-demo`, `crates/partial-eval/src` | strict, IO/network/async forbidden | spec |
+| **kernel** (laboratory) | `crates/kalman`, `crates/gamma-poisson`, `crates/ekf-bearing`, `crates/codegen-demo`, `crates/partial-eval/src` | strict, IO/network/async forbidden | spec |
 | **autodiff** (laboratory) | `crates/autodiff` | strict, IO/network/async forbidden | spec, kernel |
 | **codegen** (tooling) | `crates/codegen`, `crates/spec-loader`, `crates/partial-eval/build.rs` | relaxed, IO allowed | spec |
 | **shell** (hands) | `crates/embedded`, `crates/end-to-end`, `xtask` | relaxed, IO + async allowed | spec, kernel, codegen-demo |
@@ -131,22 +192,38 @@ Inert types only. Strict purity. `no_std`-compatible.
 
 ### Lab 0b — `crates/spec-loader` (loader layer, relaxed purity)
 
-The IO bridge that both `partial-eval/build.rs` and the `kalman_filter!` proc-macro depend on.
+The IO bridge that both `partial-eval/build.rs` and the `bayesian_filter!` proc-macro depend on. Loads any `ModelSpec` variant — consumers dispatch on what they get back.
 
 - `src/lib.rs`: `pub fn load(path: &Path) -> Result<spec::ModelSpec, Error>`. Reads file, parses RON, returns owned `ModelSpec` from `crates/spec`.
 - Deps: `spec` (path), `ron`, `serde`. Allowed file IO.
 - **Done when**: `cargo test -p spec-loader` parses workspace `model.ron`.
 
-### Lab 1 — `crates/model`
+### Lab 1a — `crates/kalman` (the "well-behaved continuous" reference)
 
-Reference implementation. Everything else compares against it. **Generic over scalar `T`** so Lab 2 can re-use the exact same code with `T = Dual<f32>`.
+Linear-Gaussian Kalman, generic over scalar `T` so Lab 2 can re-use the same code with `T = DualVec<f32, U6>`.
 
 - `src/filter.rs`: `pub struct KalmanFilter<T, const N: usize, const M: usize> where T: nalgebra::RealField + Copy` over `nalgebra::SMatrix<T, _, _>`. Methods `predict`, `update` (Joseph form), `neg_log_likelihood` — all generic in `T`.
-- `src/lib.rs`: `pub fn cv_2d<T>(dt: T, q: T, r: T) -> KalmanFilter<T, 4, 2>` for the toy model. Convenience alias `pub type Cv2dF32 = KalmanFilter<f32, 4, 2>;`.
-- `tests/cv2d.rs`: 100-step synthetic trace at `T = f32`, snapshot test on final state.
-- `Cargo.toml`: `nalgebra = { workspace = true, default-features = false, features = ["libm"] }`. `#![no_std]`.
-- **Done when**: `cargo test -p model` passes AND `cargo build -p model --target thumbv7m-none-eabi` passes (proves `no_std` for embedded).
-- **Pitfalls**: nalgebra's default features pull in `std`. `f32::powi` is std-only — write `x*x`. `T: RealField + Copy` is the bound that lets both `f32` and `num_dual::Dual<f32>` work. Keep `try_inverse` to 2×2; document the choice.
+- `src/lib.rs`: `pub fn cv_2d<T>(dt: T, q: T, r: T) -> KalmanFilter<T, 4, 2>`. Convenience alias `pub type Cv2dF32 = KalmanFilter<f32, 4, 2>;`.
+- **Done when**: `cargo test -p kalman` passes AND `cargo build -p kalman --target thumbv7m-none-eabi` passes.
+- **Pitfalls**: nalgebra default features pull in `std` — disable. `f32::powi` is std-only. `T: RealField + Copy` is the bound that lets both `f32` and `num_dual::DualVec` work.
+
+### Lab 1b — `crates/gamma-poisson` (the "no-matrix" stress test)
+
+Conjugate update on the Poisson rate. The whole filter fits in two `f32`s. Exists to prove the architecture isn't quietly Kalman-shaped.
+
+- `src/lib.rs`: `pub struct GammaPosterior { shape: f32, rate: f32 }` with `update(&mut self, k: u32)` doing `(α, β) → (α + k, β + 1)`. No nalgebra dep. `#![no_std]`.
+- `tests/conjugate.rs`: prior + 100 simulated counts → posterior matches analytical formula exactly (this one *can* be bit-identical because it's integer arithmetic on the sufficient statistic).
+- **Done when**: tests pass; `cargo tree -p gamma-poisson` shows no nalgebra, no num-dual, no anything beyond `spec` and `core`.
+- **Pitfalls**: tempting to overengineer (add dispersion checks, posterior predictive, etc.) — resist. The point is minimality.
+
+### Lab 1c — `crates/ekf-bearing` (the "AD-actually-needed" test)
+
+EKF on `[x, y, vx, vy]` with scalar bearing observation `h(x) = atan2(y − sy, x − sx)`. The Jacobian `H = ∂h/∂x` is computed every update via `crates/autodiff::bearing_jacobian` — there's no precomputable steady-state because `H` depends on the current state estimate.
+
+- `src/lib.rs`: `pub struct EkfBearing<T>` over `SMatrix<T, _, _>`, `predict` and `update(bearing: T)` methods.
+- `tests/observability.rs`: simulate a stationary sensor and a constant-velocity target; verify the EKF stays consistent (covariance grows along the unobservable direction, shrinks along the observable one).
+- **Done when**: tests pass; `crates/autodiff::bearing_jacobian` returns a non-stub Jacobian and the EKF uses it.
+- **Pitfalls**: bearing-only is unobservable from a stationary sensor — the test must use sensor motion or two sensors, otherwise `P` grows unboundedly and the test is misleading. The atan2 derivative has a singularity at the sensor location; document the assumption that the target is never exactly there.
 
 ### Lab 2 — `crates/autodiff`
 
@@ -182,13 +259,13 @@ Forward-mode AD via `num-dual`. Same `model::nll` source, different scalar type,
 
 ### Lab 4 — `crates/codegen` + `crates/codegen-demo`
 
-Proc-macro `kalman_filter!{ spec = "...", name = Filter4x2 }` consumes the model spec and emits a fully specialized `update`.
+Proc-macro `bayesian_filter!{ spec = "...", name = Filter4x2 }` consumes the model spec, dispatches on the `ModelSpec` variant, and emits a model-specific specialized `update`.
 
-- `crates/codegen/src/lib.rs`: `#[proc_macro] pub fn kalman_filter(input: TokenStream) -> TokenStream`. Deps: `syn = { version = "2", features = ["full"] }`, `quote`, `proc-macro2`, `spec-loader`.
+- `crates/codegen/src/lib.rs`: `#[proc_macro] pub fn bayesian_filter(input: TokenStream) -> TokenStream`. Deps: `syn = { version = "2", features = ["full"] }`, `quote`, `proc-macro2`, `spec-loader`.
 - `crates/codegen/src/parse.rs`: parses `spec = "path", name = Ident` via `syn::parse::Parse`.
-- `crates/codegen/src/expand.rs`: emits a struct with `x: [f32; 4]` + an `update(&mut self, z_x: f32, z_y: f32)` body that's straight-line arithmetic, fully unrolled, no allocations, no nalgebra dependency in the output.
-- `crates/codegen-demo/src/lib.rs`: `kalman_filter!{ spec = "../../model.ron", name = Filter4x2 }`.
-- `crates/codegen-demo/tests/equivalence.rs`: same 100-step trace through `Filter4x2` and `model::cv_2d`, assert max-abs-diff < 1e-4.
+- `crates/codegen/src/expand.rs`: dispatches per variant. Kalman → struct with `[f32; 4]` state, baked-in `K_INF`, straight-line arithmetic update. GammaPoisson → struct with `(α, β)`, integer-update method. EkfBearing → struct with `[f32; 4]` state and a `update(bearing: f32)` that calls into a runtime Jacobian helper. None of the emitted code depends on nalgebra.
+- `crates/codegen-demo/src/lib.rs`: `bayesian_filter!{ spec = "../../model.ron", name = Filter4x2 }` (or sibling demos pointing at `gamma-poisson.ron`/`ekf-bearing.ron`).
+- `crates/codegen-demo/tests/equivalence.rs`: per-model — for the Kalman demo, same 100-step trace through `Filter4x2` and `kalman::cv_2d`, assert max-abs-diff < 1e-4.
 - **Done when**: `cargo expand -p codegen-demo` shows literal f32 constants in place of `K_INF`; equivalence test passes.
 - **Pitfalls**: macro paths are relative to the *invoking* crate, so use absolute path or `MOONSHOT_MODEL` env var. Use `proc_macro2::Literal::f32_suffixed` for f32 literals — `quote!` Display loses precision. Output must not depend on nalgebra so `crates/embedded` can pull it in cheaply.
 
@@ -229,7 +306,9 @@ Embassy bin, `thumbv7m-none-eabi`, runs in QEMU's `lm3s6965evb`.
 - `model.ron` — F, H, Q, R, dt for the 2D constant-velocity model. **Single source of truth read by both build.rs and the proc-macro.**
 - `crates/spec/src/lib.rs` — inert types + newtypes + enums. The dictionary layer.
 - `crates/spec-loader/src/lib.rs` — the file-IO bridge that prevents drift between Lab 3 and Lab 4.
-- `crates/model/src/filter.rs` — reference Kalman filter; the comparison oracle.
+- `crates/kalman/src/filter.rs` — reference Kalman filter; the comparison oracle for Lab 1a.
+- `crates/gamma-poisson/src/lib.rs` — minimal conjugate update; the "no-matrix" architectural test.
+- `crates/ekf-bearing/src/lib.rs` — non-linear filter; proves AD is genuinely load-bearing.
 - `crates/codegen/src/expand.rs` — the heart of the compile-time specialization story.
 - `crates/partial-eval/build.rs` — Riccati solver; the demonstration that "the unchanging math becomes a binary constant."
 
@@ -237,5 +316,5 @@ Embassy bin, `thumbv7m-none-eabi`, runs in QEMU's `lm3s6965evb`.
 
 1. **`num_dual::DualVec<f32, U6>` may need extra trait-bound coaxing for nalgebra.** Should work out of the box in `num-dual` 0.10+ since both crates target the same `simba`/`num-traits` ecosystem, but generic bounds in Rust are notoriously fiddly. Fallback: hand-write a 6-element forward-mode dual struct (≈80 lines) with explicit `RealField` impl.
 2. **Proc-macro path resolution is fiddly on Windows.** Use absolute paths via `MOONSHOT_MODEL` env var, not relative `"../../model.ron"`, to avoid surprises across `cargo expand` / `cargo test` invocation contexts.
-3. **`f32` reordering between host (x86) and Cortex-M3 (soft-float)** may produce small bit-level differences. The 1e-4 tolerance accommodates this; if exact bit-equality matters, the equivalence test gets stricter and we'll need to think about determinism.
+3. **`f32` reordering between host (x86) and Cortex-M3 (soft-float)** produces small bit-level differences. Bit-identical equivalence has been dropped from scope — the contract is a per-component tolerance. Document the chosen ε with its basis (e.g., "1e-4 because 100-step trajectory accumulates < 1e-5 of FP reordering error in the worst case") so the number is a calibrated bound rather than a guess.
 4. **Embassy executor on `lm3s6965evb` requires the right cortex-m-rt linker arguments.** This is well-trodden but easy to get wrong on the first attempt; budget some flailing time for the QEMU boot.

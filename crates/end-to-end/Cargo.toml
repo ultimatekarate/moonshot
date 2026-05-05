@@ -7,5 +7,7 @@ description = "Host harness: runs reference, macro-expanded, and QEMU-traced fil
 
 [dependencies]
 spec = { path = "../spec" }
-model = { path = "../model" }
+kalman = { path = "../kalman" }
+gamma-poisson = { path = "../gamma-poisson" }
+ekf-bearing = { path = "../ekf-bearing" }
 codegen-demo = { path = "../codegen-demo" }

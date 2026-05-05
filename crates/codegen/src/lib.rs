@@ -4,13 +4,17 @@ use quote::quote;
 mod expand;
 mod parse;
 
-/// `kalman_filter! { spec = "../../model.ron", name = Filter4x2 }`
+/// `bayesian_filter! { spec = "../../model.ron", name = Filter4x2 }`
 ///
-/// Stub: emits an empty struct so codegen-demo compiles.
-/// Real implementation reads the spec via spec-loader, bakes in the
-/// Riccati gain, emits straight-line arithmetic. See docs/plan.md Lab 4.
+/// Single entry point that reads the spec, dispatches on `ModelSpec` variant,
+/// and emits a specialized `update` function appropriate to the model class:
+///   - Kalman:        struct with `[f32; 4]` state, baked-in K_INF, straight-line update
+///   - GammaPoisson:  struct with `(α, β)`, integer-update method
+///   - EkfBearing:    struct with `[f32; 4]` state, runtime-Jacobian update
+///
+/// Stub: emits an empty Filter4x2 so codegen-demo compiles. See docs/plan.md Lab 4.
 #[proc_macro]
-pub fn kalman_filter(_input: TokenStream) -> TokenStream {
+pub fn bayesian_filter(_input: TokenStream) -> TokenStream {
     quote! {
         pub struct Filter4x2 {
             pub x: [f32; 4],

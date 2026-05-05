@@ -2,8 +2,14 @@
 // State: [x, y, vx, vy]   Observation: [x_meas, y_meas]   dt = 0.1
 //
 // Single source of truth — read by partial-eval/build.rs and the
-// kalman_filter! proc-macro at compile time.
-ModelSpec(
+// bayesian_filter! proc-macro at compile time. The enum wrapper is a
+// load-bearing architectural commitment: ModelSpec covers three problem
+// classes (Kalman, Gamma-Poisson, EKF-bearing) so consumers must dispatch
+// rather than hard-code Kalman shape.
+//
+// Sibling specs live in gamma-poisson.ron and ekf-bearing.ron alongside
+// this file (both are stubs until those labs are fleshed out).
+Kalman(KalmanSpec(
     f: [
         [1.0, 0.0, 0.1, 0.0],
         [0.0, 1.0, 0.0, 0.1],
@@ -34,4 +40,4 @@ ModelSpec(
     // Tune these once we measure the actual conditioning of `P`.
     state_scale: [1.0, 1.0, 1.0, 1.0],
     cayley_alpha: 1.0,
-)
+))

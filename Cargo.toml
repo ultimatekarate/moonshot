@@ -3,7 +3,9 @@ resolver = "2"
 members = [
     "crates/spec",
     "crates/spec-loader",
-    "crates/model",
+    "crates/kalman",
+    "crates/gamma-poisson",
+    "crates/ekf-bearing",
     "crates/autodiff",
     "crates/partial-eval",
     "crates/codegen",
@@ -15,7 +17,9 @@ members = [
 default-members = [
     "crates/spec",
     "crates/spec-loader",
-    "crates/model",
+    "crates/kalman",
+    "crates/gamma-poisson",
+    "crates/ekf-bearing",
     "crates/autodiff",
     "crates/partial-eval",
     "crates/codegen",

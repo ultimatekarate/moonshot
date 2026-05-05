@@ -24,23 +24,35 @@ Plus an architectural-governance layer: [`basis.yaml`](basis.yaml) declares laye
 
 I can hear the protests now: "Riccati equations?! They have finite escape time! Isn't that a footgun?" Yes, but I have a plan. Is it a good plan? Again, no idea. **Research**.
 
-## The toy problem
+## The toy problems (three of them)
 
-A 2D constant-velocity Kalman filter. State `[x, y, vx, vy]`, observation `[x, y]`. Closed-form posterior, fits 32KB easily, has both static parts (steady-state gain) and dynamic parts (innovation update) — ideal for partial-evaluation experiments.
+One toy problem would let the architecture quietly over-fit to it. Three force the choices that survive across all three to be the real architectural commitments; everything else gets quarantined into the model's own crate.
+
+| Model | Real-world stand-in | What it stresses |
+| --- | --- | --- |
+| **2D Kalman** (`crates/kalman`) | Drone IMU/GPS fusion, Li-ion SOC, AHRS | Closed-form gain, Riccati, eigenvalue stability |
+| **Gamma-Poisson** (`crates/gamma-poisson`) | Predictive maintenance, packet-loss / queue-rate monitoring | The architecture *without* nalgebra, AD, or Riccati |
+| **EKF-bearing** (`crates/ekf-bearing`) | Passive sonar, anti-drone DF, vision-based localisation | AD genuinely load-bearing for the Jacobian, no steady state |
+
+[`crates/spec`](crates/spec) holds a sum-typed `ModelSpec` over the three; every consumer (build.rs, proc-macros, host harness) dispatches.
 
 ## Layout
 
 ```
 moonshot/
 ├── basis.yaml                  # architectural governance, all five axes
-├── model.ron                   # single source of truth for F, H, Q, R, dt
+├── model.ron                   # Kalman variant of ModelSpec
+├── gamma-poisson.ron           # GammaPoisson variant
+├── ekf-bearing.ron             # EkfBearing variant
 ├── crates/
-│   ├── spec/                   # dictionary: ModelSpec, newtypes, completeness enums
-│   ├── spec-loader/            # IO bridge: file → ModelSpec (build.rs + proc-macro both use this)
-│   ├── model/                  # Lab 1: KalmanFilter<T, N, M>, generic in T
+│   ├── spec/                   # dictionary: enum ModelSpec + per-variant structs
+│   ├── spec-loader/            # IO bridge: file → ModelSpec
+│   ├── kalman/                 # Lab 1a: KalmanFilter<T, N, M>, generic in T
+│   ├── gamma-poisson/          # Lab 1b: conjugate update, no matrices, no AD
+│   ├── ekf-bearing/            # Lab 1c: non-linear h, runtime Jacobian via AD
 │   ├── autodiff/               # Lab 2: forward-mode AD via num-dual
-│   ├── partial-eval/           # Lab 3: build.rs solves Riccati, embeds K_inf as const
-│   ├── codegen/                # Lab 4: kalman_filter! proc-macro
+│   ├── partial-eval/           # Lab 3: build.rs dispatcher (Riccati for Kalman branch)
+│   ├── codegen/                # Lab 4: bayesian_filter! proc-macro (per-model emission)
 │   ├── codegen-demo/           # consumer of the macro
 │   ├── embedded/               # Lab 5: no_std bin, runs in QEMU lm3s6965evb
 │   └── end-to-end/             # host harness: reference vs macro vs QEMU trace

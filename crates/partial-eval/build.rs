@@ -8,8 +8,15 @@ fn main() {
 
     // Stub: emit a placeholder K_INF until the real Riccati solver lands.
     //
-    // Real implementation runs in two preconditioning steps before the
-    // bounded iteration begins:
+    // This build.rs is a per-model dispatcher:
+    //   ModelSpec::Kalman       → run Cayley-bounded Riccati, emit K_INF + stability check
+    //   ModelSpec::GammaPoisson → no precompute (conjugate update has no fixed point);
+    //                              just validate prior_shape > 0, prior_rate > 0
+    //   ModelSpec::EkfBearing   → no steady-state K (time-varying gain); precompute
+    //                              the linearization sparsity pattern instead, or skip
+    //
+    // Below describes the Kalman branch. Real implementation runs in two
+    // preconditioning steps before the bounded iteration begins:
     //
     //   1. State scaling. Apply a similarity transform with D = diag(state_scale):
     //          x'  = D⁻¹ x      F'  = D⁻¹ F D
