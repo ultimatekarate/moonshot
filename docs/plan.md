@@ -7,18 +7,18 @@ You want to explore how far Bayesian inference can be lifted into the Rust compi
 Three findings from research that shape the design:
 
 1. **`weval` doesn't fit a native MCU target.** It partial-evaluates WASM interpreters. The faithful translation of your "embed pre-computed answers in the binary" intent on native is `build.rs` (offline solving) + `const fn` (compile-time folding) + proc-macros (specialized code emission). The plan uses these instead.
-2. **Enzyme is too fragile for this stack.** It requires a custom-built nightly rustc (`llvm.enzyme = true`) and the official channel only carries it intermittently. With 6 parameters in our toy model, forward-mode AD via `num-dual` is functionally equivalent at trivial cost and keeps the entire workspace on stable Rust. The AD lab uses dual numbers; same source code, parameterised over scalar type.
+2. **Enzyme is too fragile for this stack.** It requires a custom-built nightly rustc (`llvm.enzyme = true`) and the official channel only carries it intermittently. With 6 parameters in our toy model, forward-mode AD via `num-dual` is functionally equivalent at trivial cost and keeps the entire workspace on stable Rust. The AD lab uses dual numbers; same source code, parameterized over scalar type.
 3. **The remaining pipeline still requires custom glue.** nalgebra is a runtime library, proc-macros work on tokens, embassy targets bare metal, build.rs reads files. The integration is the research artifact — knit together via a shared `model.ron` + a small `crates/spec` dictionary that everyone consumes.
 
 **Choices anchored from your answers**: three model classes (so the architecture can't over-fit to one), QEMU first (`lm3s6965evb`, Cortex-M3), labs as a scaffold with a thin end-to-end seam.
 
 ## Three model classes
 
-The architecture must serve all three; choices that only fit one get quarantined into that one's crate. The trio is picked to maximise architectural pressure:
+The architecture must serve all three; choices that only fit one get quarantined into that one's crate. The trio is picked to maximize architectural pressure:
 
 1. **2D Kalman filter** (`crates/kalman`) — linear-Gaussian sensor fusion. State `[x, y, vx, vy]`, observation `[x, y]`. Closed-form steady-state gain via Riccati. *Real-world stand-in for*: drone IMU/GPS fusion, Li-ion state-of-charge, AHRS, automotive radar/camera fusion. **Exercises**: nalgebra const dims, build-time numerical solver, eigenvalue stability check, Cayley parametrization.
 2. **Gamma-Poisson conjugate update** (`crates/gamma-poisson`) — on-device event-rate estimation. Posterior `Gamma(α + Σk, β + n)` over the Poisson rate after `n` ticks. *Real-world stand-in for*: predictive maintenance, packet-loss tracking, queue monitoring, interrupt-rate anomaly detection. **Exercises**: the architecture *without* nalgebra, AD, or Riccati. If basis governance, the proc-macro story, and the embedded shell still hold for a model that has no matrices, those parts are genuinely architecture.
-3. **EKF for bearing-only 2D tracking** (`crates/ekf-bearing`) — non-linear observation `θ = atan2(y - sy, x - sx)`. *Real-world stand-in for*: passive sonar, anti-drone direction-finding, marine wildlife acoustic tracking, vision-based robot localisation. **Exercises**: AD genuinely load-bearing (Jacobian computed every update via dual numbers, not precomputed), time-varying gain (no Riccati steady state), and a famously degenerate geometry that stresses the build-time machinery.
+3. **EKF for bearing-only 2D tracking** (`crates/ekf-bearing`) — non-linear observation `θ = atan2(y - sy, x - sx)`. *Real-world stand-in for*: passive sonar, anti-drone direction-finding, marine wildlife acoustic tracking, vision-based robot localization. **Exercises**: AD genuinely load-bearing (Jacobian computed every update via dual numbers, not precomputed), time-varying gain (no Riccati steady state), and a famously degenerate geometry that stresses the build-time machinery.
 
 `ModelSpec` is a sum type over the three; every consumer (build.rs, proc-macros, host harness) dispatches. Adding a fourth model means adding a variant — basis exhaustive-matching forces every consumer to declare its handling, no silent fall-through.
 
@@ -30,21 +30,21 @@ The actual deliverable. Every piece of the compile-time pipeline exists to lift 
 
 **Pipeline-wide (apply to all three models):**
 
-3. **Straight-line update.** `update()` has no allocation, no panic, no recursion, and bounded execution time. *Lab 4 proc-macro emission.*
-4. **No nalgebra in the embedded binary.** Macro output is raw arithmetic; `cargo tree -p embedded` check enforces. *Lab 4 + verification.*
-5. **Host ↔ target equivalence.** The same input trace produces matching output within per-component tolerance across host f32 and soft-float Cortex-M3. (Bit-identical equivalence is explicitly *not* in scope.) *end-to-end harness.*
-6. **Architectural layering preserved.** Strict-purity layers don't accidentally pull in IO, async, or wider deps. *basis.yaml + basis-cli check.*
-7. **Prior validity.** All model priors are well-formed at build time (Q PD, R PD, Gamma shape/rate positive, etc.) — caught in `partial-eval/build.rs` before any solver runs. *applies to all three.*
+1. **Straight-line update.** `update()` has no allocation, no panic, no recursion, and bounded execution time. *Lab 4 proc-macro emission.*
+2. **No nalgebra in the embedded binary.** Macro output is raw arithmetic; `cargo tree -p embedded` check enforces. *Lab 4 + verification.*
+3. **Host ↔ target equivalence.** The same input trace produces matching output within per-component tolerance across host f32 and soft-float Cortex-M3. (Bit-identical equivalence is explicitly *not* in scope.) *end-to-end harness.*
+4. **Architectural layering preserved.** Strict-purity layers don't accidentally pull in IO, async, or wider deps. *basis.yaml + basis-cli check.*
+5. **Prior validity.** All model priors are well-formed at build time (Q PD, R PD, Gamma shape/rate positive, etc.) — caught in `partial-eval/build.rs` before any solver runs. *applies to all three.*
 
 **Kalman-family only (Kalman + EKF-bearing):**
 
 1. **Riccati convergence.** `K_INF` is the converged fixed point of the Cayley-bounded iteration, not a non-converged or escaped iterate. The Cayley parametrization makes finite escape impossible by construction; the boundary-distance check catches the conditioning failure that maps to `P → ∞`. *Lab 3 build.rs.* **Kalman only** — the EKF has no steady-state.
 2. **Closed-loop stability.** Eigenvalues of `(I − K_INF H) F` lie strictly inside the unit disk. A converged Riccati can still produce a marginally-stable gain that drives slow runtime divergence even with bounded inputs. *Lab 3 build.rs.* **Kalman only** for the same reason.
-8. **Compile-time dimension correctness.** Matrix shape mismatches are compile errors, not runtime panics. *nalgebra const generics.* **Kalman + EKF only** (Gamma-Poisson has no matrices).
+3. **Compile-time dimension correctness.** Matrix shape mismatches are compile errors, not runtime panics. *nalgebra const generics.* **Kalman + EKF only** (Gamma-Poisson has no matrices).
 
 **Gamma-Poisson only:**
 
-9. **Posterior is always a valid Gamma.** `α > 0`, `β > 0` invariant after every update — straightforwardly true because the update increments only, but worth naming.
+1. **Posterior is always a valid Gamma.** `α > 0`, `β > 0` invariant after every update — straightforwardly true because the update increments only, but worth naming.
 
 Decision rule for new build-time work: it lifts one of these to guaranteed. Decision rule for an architectural choice: it serves a pipeline-wide invariant, OR it's quarantined into the model-specific crate where it belongs (Cayley + Riccati live in `crates/kalman` or `crates/partial-eval`'s Kalman branch, *not* in the proc-macro or the spec).
 
@@ -157,6 +157,7 @@ This project's whole point is *compile-time correctness*. Architectural drift be
 ### Newtypes (Values axis)
 
 Defined in `crates/spec/src/lib.rs`:
+
 - `Timestep` wraps `f32` — prevents mixing `dt` with arbitrary times.
 - `LogLikelihood` wraps `f32` — prevents adding log-probs to probabilities.
 - `StateDim` wraps `usize`, `MeasDim` wraps `usize` — reinforces the const-generic dimension story at the spec level.
@@ -171,14 +172,6 @@ Defined in `crates/spec/src/lib.rs`:
 ### Purity (forbidden in strict)
 
 `file_io`, `network_io`, `stdout`, `stderr`, `env_vars`, `system_clock`, `dynamic_execution`, `subprocess`.
-
-### Granularity
-
-`max_lines: 600` — research repo, smaller files than basis's own 800-line cap.
-
-### Known limit
-
-Basis is a string-matching tool. It catches source-import violations but not Cargo dep-graph violations. The constraint "the macro output in `crates/embedded` must not transitively pull in nalgebra" is enforced at the *Cargo* level (codegen output emits no `use nalgebra::` and `crates/embedded/Cargo.toml` doesn't list it as a dep). `just verify` includes a `cargo tree -p embedded | grep -v nalgebra` check as a backstop.
 
 ## Lab specs
 
@@ -244,7 +237,7 @@ Forward-mode AD via `num-dual`. Same `model::nll` source, different scalar type,
 - `src/lib.rs`: `#![no_std] include!(concat!(env!("OUT_DIR"), "/k_inf.rs"));` plus a `pub const fn dt_squared(dt: f32) -> f32 { dt * dt }` to demonstrate the const-fn angle.
 - `tests/converged.rs`: run 50 explicit steps via `model::cv_2d`, assert gain converges to `K_INF` within 1e-5.
 - **Done when**: `cargo expand -p partial-eval` shows a literal f32 array; convergence test passes.
-- **Constant `dt` is load-bearing.** `K_INF` is precomputed from `(F, Q, R)`, and `dt` enters `F`. Baking `K_INF` as a `const` therefore requires `dt` to be a `const` too. Accepted on purpose: embedded sensors are hardware-clocked at a fixed rate, so this matches reality. Multi-rate operation (e.g., IMU + GPS) would emit one specialised `K_INF_*` per supported rate and dispatch at runtime — left as a follow-on.
+- **Constant `dt` is load-bearing.** `K_INF` is precomputed from `(F, Q, R)`, and `dt` enters `F`. Baking `K_INF` as a `const` therefore requires `dt` to be a `const` too. Accepted on purpose: embedded sensors are hardware-clocked at a fixed rate, so this matches reality. Multi-rate operation (e.g., IMU + GPS) would emit one specialized `K_INF_*` per supported rate and dispatch at runtime — left as a follow-on.
 - **Closed-loop stability check** (runtime invariant #2). After Riccati converges and `K_inf` is recovered, form `F_cl = (I − K_inf H) F`, compute its complex eigenvalues via `nalgebra::SMatrix::complex_eigenvalues()`, and verify `max|λ| < 1`. Emit `ClosedLoopStability::Stable { spectral_radius }` on success; on failure emit `Unstable { spectral_radius }` and panic loudly so the build fails before a divergent gain gets baked in.
 - **Why Cayley?** The naive Riccati iteration on `P` admits finite escape time — the iterate can blow up in 2–3 steps when `(F, Q^½)` is not stabilizable, and a `‖P_{k+1} − P_k‖_F` tolerance check won't catch it (the residual is huge but the loop "succeeded"). The Cayley transform maps the cone `{P > 0}` to the open unit ball of symmetric contractions; iteration in those coordinates is bounded by construction, so finite escape is impossible. Inversions of `(I − Y)`-type denominators are well-conditioned everywhere except the boundary, and the boundary itself is a well-defined detectable surface (the image of `P → ∞`).
 - **Two preconditioners** carried by `ModelSpec`, applied in order before the bounded iteration:

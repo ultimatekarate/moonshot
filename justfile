@@ -7,8 +7,8 @@ basis:
 
 # Lab 1 — reference Kalman, builds for both host and thumbv7m.
 lab1:
-    cargo test -p model
-    cargo build -p model --target thumbv7m-none-eabi
+    cargo test -p kalman
+    cargo build -p kalman --target thumbv7m-none-eabi
 
 # Lab 2 — dual-number gradient matches numerical gradient.
 lab2:

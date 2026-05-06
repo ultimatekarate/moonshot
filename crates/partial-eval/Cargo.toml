@@ -12,7 +12,7 @@ spec = { path = "../spec" }
 [build-dependencies]
 spec = { path = "../spec" }
 spec-loader = { path = "../spec-loader" }
-nalgebra = { workspace = true, default-features = false, features = ["std"] }
+riccati = { path = "../riccati" }
 
 [dev-dependencies]
 kalman = { path = "../kalman" }

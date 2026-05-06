@@ -14,4 +14,4 @@ quote = { workspace = true }
 proc-macro2 = { workspace = true }
 spec = { path = "../spec" }
 spec-loader = { path = "../spec-loader" }
-nalgebra = { workspace = true, default-features = false, features = ["std"] }
+riccati = { path = "../riccati" }

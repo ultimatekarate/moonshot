@@ -32,7 +32,7 @@ One toy problem would let the architecture quietly over-fit to it. Three force t
 | --- | --- | --- |
 | **2D Kalman** (`crates/kalman`) | Drone IMU/GPS fusion, Li-ion SOC, AHRS | Closed-form gain, Riccati, eigenvalue stability |
 | **Gamma-Poisson** (`crates/gamma-poisson`) | Predictive maintenance, packet-loss / queue-rate monitoring | The architecture *without* nalgebra, AD, or Riccati |
-| **EKF-bearing** (`crates/ekf-bearing`) | Passive sonar, anti-drone DF, vision-based localisation | AD genuinely load-bearing for the Jacobian, no steady state |
+| **EKF-bearing** (`crates/ekf-bearing`) | Passive sonar, anti-drone DF, vision-based localization | AD genuinely load-bearing for the Jacobian, no steady state |
 
 [`crates/spec`](crates/spec) holds a sum-typed `ModelSpec` over the three; every consumer (build.rs, proc-macros, host harness) dispatches.
 
