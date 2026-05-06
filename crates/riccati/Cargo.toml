@@ -1,0 +1,10 @@
+[package]
+name = "riccati"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Cayley-parametrised solver for the discrete algebraic Riccati equation. Host-only; called from build.rs and proc-macros."
+
+[dependencies]
+spec = { path = "../spec" }
+nalgebra = { workspace = true, default-features = false, features = ["std"] }
