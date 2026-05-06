@@ -1,5 +1,8 @@
 [target.thumbv7m-none-eabi]
-runner = "qemu-system-arm -cpu cortex-m3 -machine lm3s6965evb -nographic -semihosting-config enable=on,target=native -kernel"
+# `-icount shift=0` makes QEMU's DWT::CYCCNT tick once per executed instruction
+# (deterministic across runs and reboots) instead of derived from host wall-clock.
+# Without this, the cycle-counting demo flakes.
+runner = "qemu-system-arm -cpu cortex-m3 -machine lm3s6965evb -nographic -semihosting-config enable=on,target=native -icount shift=0 -kernel"
 rustflags = [
     "-C", "link-arg=-Tlink.x",
 ]

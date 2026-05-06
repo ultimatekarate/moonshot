@@ -4,3 +4,5 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Workspace task runner: cargo xtask qemu --capture, cargo xtask verify."
+
+[dependencies]

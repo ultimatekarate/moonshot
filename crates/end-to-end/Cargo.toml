@@ -11,3 +11,4 @@ kalman = { path = "../kalman" }
 gamma-poisson = { path = "../gamma-poisson" }
 ekf-bearing = { path = "../ekf-bearing" }
 codegen-demo = { path = "../codegen-demo" }
+nalgebra = { workspace = true }

@@ -29,9 +29,12 @@ qemu:
     cargo xtask qemu --capture
 
 # End-to-end: architecture intact, no nalgebra in MCU dep tree, all 3 implementations agree.
+# `-e no-proc-macro` filters out the codegen proc-macro's host-side use of nalgebra
+# (which doesn't reach the binary). The negated grep would be silently broken otherwise:
+# `grep -vq foo` exits 0 whenever any line doesn't match, which is almost always.
 verify:
     just basis
-    cargo tree -p embedded | grep -vq nalgebra
+    ! cargo tree -p embedded --target thumbv7m-none-eabi -e no-proc-macro | grep -q nalgebra
     cargo run -p end-to-end -- --with-qemu-trace
 
 # Track flash/RAM cost as we specialize more.

@@ -41,3 +41,15 @@ syn = { version = "2", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"
 num-dual = { version = "0.10", default-features = false, features = ["linalg"] }
+
+# Aggressive inlining + LTO is what carries the macro-emitted straight-line
+# arithmetic through to the binary. Without these, unrolling can collapse back
+# into loops or non-inlined calls, which then re-introduces input-dependent
+# timing in the cycle-counting demo.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+overflow-checks = false
+debug = false

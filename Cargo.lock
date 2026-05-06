@@ -142,6 +142,8 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "cortex-m-semihosting",
+ "kalman",
+ "nalgebra",
  "panic-halt",
 ]
 
@@ -163,6 +165,7 @@ dependencies = [
  "ekf-bearing",
  "gamma-poisson",
  "kalman",
+ "nalgebra",
  "spec",
 ]
 

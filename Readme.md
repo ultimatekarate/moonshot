@@ -10,7 +10,7 @@ This is the motivating question:
 
 ## Original outline, and how it changed
 
-I have no idea what I'm doing. This is **research**. I'm not supposed to know what I'm doing. I had an initial idea that I thought might work; but I ran into some snags. 
+This is **research**. I'm not supposed to know what I'm doing. I had an initial idea that I thought might work; but I ran into some snags.
 
 | Stage | First idea | Better(?) idea | Why it changed |
 | --- | --- | --- | --- |
