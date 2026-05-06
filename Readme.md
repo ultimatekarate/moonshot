@@ -1,12 +1,12 @@
 # Moonshot
 
-Pushing as much of a Bayesian inference pipeline into the Rust compiler as possible, then deploying to a 32KB-class microcontroller. Exploratory research — the goal is to find out what's possible, where the friction is, and whether the pipeline composes. ~~It seems like it should work.~~ It actually works.
+Pushing as much of a Bayesian inference pipeline into the Rust compiler as possible, then deploying to a Cortex-M target. Exploratory research — the goal is to find out what's possible, where the friction is, and whether the pipeline composes. The pipeline composes; the runtime properties are a separate question, measured per-target. See [test_results/](test_results/) for what's been measured and what hasn't.
 
 ## Research question
 
 This is the motivating question:
 
-> How do we use Rust's const evaluation to verify a prior, specialize a sampler via partial evaluation, and deploy a bit-accurate, verified posterior solver to a 32KB RAM microcontroller?
+> How do we use Rust's const evaluation to verify a prior, specialize a sampler via partial evaluation, and deploy a bit-accurate, verified posterior solver to a small embedded target?
 
 ## Original outline, and how it changed
 
@@ -65,7 +65,7 @@ moonshot/
 ```bash
 just basis     # architecture check (basis-cli)
 just lab1      # reference Kalman tests + thumbv7m-none-eabi build
-just lab2      # dual-number gradient matches numerical (within 1e-3)
+just lab2      # dual-number gradient matches numerical
 just lab3      # K_INF lands as a literal const
 just lab4      # macro emits straight-line specialized update
 just qemu      # boot the embedded binary in QEMU
