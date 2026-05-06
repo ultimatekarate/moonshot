@@ -87,7 +87,7 @@ layers:
     depends_on: [serialization, rust-internal]
 
   kernel:
-    role: "Pure math. The three model labs, codegen-demo consumer, partial-eval runtime."
+    role: "Pure math. The three model labs, codegen-demo consumer, partial-eval runtime, Riccati solver."
     # Crate-name aliases mirror the path entries so `use kalman::...` etc. match.
     packages:
       - "crates/kalman"
@@ -95,6 +95,7 @@ layers:
       - "crates/ekf-bearing"
       - "crates/codegen-demo"
       - "crates/partial-eval/src"
+      - "crates/riccati"
       - kalman
       - gamma-poisson
       - gamma_poisson
@@ -104,6 +105,7 @@ layers:
       - codegen_demo
       - partial-eval
       - partial_eval
+      - riccati
     rules:
       purity: strict
       io: forbidden
@@ -142,7 +144,11 @@ layers:
     rules:
       purity: relaxed
       io: allowed
-    depends_on: [spec, serialization, proc-macro-utils, linalg, rust-internal]
+    # `kernel` is included so codegen can call into the Riccati solver
+    # (`crates/riccati`) at build/macro time. The edge specialises kernel
+    # math into emitted code — the same role codegen already plays for
+    # `crates/codegen-demo`. No `boundaries:` rule denies codegen → kernel.
+    depends_on: [spec, kernel, serialization, proc-macro-utils, linalg, rust-internal]
 
   shell:
     role: "Hands. Embedded entry point, host harness, xtask runner."
